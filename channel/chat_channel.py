@@ -11,6 +11,7 @@ from channel.channel import Channel
 from common.dequeue import Dequeue
 from common import memory
 from plugins import *
+from collections import defaultdict
 
 try:
     from voice.audio_convert import any_to_wav
@@ -32,6 +33,9 @@ class ChatChannel(Channel):
         _thread = threading.Thread(target=self.consume)
         _thread.setDaemon(True)
         _thread.start()
+        self.pending_message = defaultdict(lambda: '.')
+        self.sent_hint = defaultdict(bool)
+        
 
     # 根据消息构造context，消息内容相关的触发项写在这里
     def _compose_context(self, ctype: ContextType, content, **kwargs):
@@ -54,33 +58,36 @@ class ChatChannel(Channel):
             if context.get("isgroup", False):
                 group_name = cmsg.other_user_nickname
                 group_id = cmsg.other_user_id
-
-                group_name_white_list = config.get("group_name_white_list", [])
-                group_name_keyword_white_list = config.get("group_name_keyword_white_list", [])
-                if any(
-                    [
-                        group_name in group_name_white_list,
-                        "ALL_GROUP" in group_name_white_list,
-                        check_contain(group_name, group_name_keyword_white_list),
-                    ]
-                ):
-                    group_chat_in_one_session = conf().get("group_chat_in_one_session", [])
-                    session_id = cmsg.actual_user_id
-                    if any(
-                        [
-                            group_name in group_chat_in_one_session,
-                            "ALL_GROUP" in group_chat_in_one_session,
-                        ]
-                    ):
-                        session_id = group_id
-                else:
-                    logger.debug(f"No need reply, groupName not in whitelist, group_name={group_name}")
-                    return None
-                context["session_id"] = session_id
+                # group_name_white_list = config.get("group_name_white_list", [])
+                # group_name_keyword_white_list = config.get("group_name_keyword_white_list", [])
+                # if any(
+                #     [
+                #         group_name in group_name_white_list,
+                #         "ALL_GROUP" in group_name_white_list,
+                #         check_contain(group_name, group_name_keyword_white_list),
+                #     ]
+                # ):
+                #     group_chat_in_one_session = conf().get("group_chat_in_one_session", [])
+                #     session_id = cmsg.actual_user_id
+                #     if any(
+                #         [
+                #             group_name in group_chat_in_one_session,
+                #             "ALL_GROUP" in group_chat_in_one_session,
+                #         ]
+                #     ):
+                #         session_id = group_id
+                # else:
+                #     logger.debug(f"No need reply, groupName not in whitelist, group_name={group_name}")
+                #     return None
+                context["session_id"] = group_id
                 context["receiver"] = group_id
             else:
                 context["session_id"] = cmsg.other_user_id
-                context["receiver"] = cmsg.other_user_id
+                context["receiver"] = cmsg.other_user_id            
+            logger.info(f"context{context}")
+            if context['msg']:
+                logger.info(f"msg{context['msg']}")
+                
             e_context = PluginManager().emit_event(EventContext(Event.ON_RECEIVE_MESSAGE, {"channel": self, "context": context}))
             context = e_context["context"]
             if e_context.is_pass() or context is None:
@@ -92,10 +99,11 @@ class ChatChannel(Channel):
         # 消息内容匹配过程，并处理content
         if ctype == ContextType.TEXT:
             if first_in and "」\n- - - - - - -" in content:  # 初次匹配 过滤引用消息
-                logger.debug(content)
-                logger.debug("[chat_channel]reference query skipped")
-                return None
-
+                a, b = content.split('- - - - - - - - - - - - - - -')
+                content = f"{b} (引用了：{a[1:20]})"
+                context['msg'].content = content
+            logger.info(f"context{context}")
+            logger.info(f"msg: {context['msg']}")
             nick_name_black_list = conf().get("nick_name_black_list", [])
             if context.get("isgroup", False):  # 群聊
                 # 校验关键字
@@ -129,9 +137,32 @@ class ChatChannel(Channel):
                             pattern = f"@{re.escape(context['msg'].self_display_name)}(\u2005|\u0020)"
                             subtract_res = re.sub(pattern, r"", content)
                         content = subtract_res
+                        group_name = context['msg'].from_user_nickname
+                        # logger.info(f"to_user_id{context['msg'].to_user_id} from_user_id{context['msg'].from_user_id} other_user_id{context['msg'].from_user_id}")
+                        last_message = "[["+context["msg"].actual_user_nickname + "]]%%**" + context['msg'].content + "**%%" 
+                        logger.info([f"chat_channel]receive at message {last_message} {group_name}"])
+                        if not self.sent_hint[group_name]:
+                            hint = conf().get("chat_hint").get(group_name,".") + "。接下来请参与对话。"
+                            logger.info("f{hint}")
+                            self.sent_hint[group_name] = True
+                        elif "t9KYfAEELP2u8EdB" in last_message:
+                            hint = "现在请你忘记之前的对话，重新开始。。你的设定是这样的："+conf().get("chat_hint").get(group_name,".") + "。接下来请参与对话。"
+                            logger.info("f{hint}")
+                            self.sent_hint[group_name] = True
+                            self.pending_message[group_name] = "."
+                            last_message = "."
+                        else:
+                            hint = ""
+                        content = f"{hint} {self.pending_message[group_name]} {last_message}"
+                        self.pending_message[group_name] = "."
                 if not flag:
                     if context["origin_ctype"] == ContextType.VOICE:
                         logger.info("[chat_channel]receive group voice, but checkprefix didn't match")
+                    group_name = context['msg'].from_user_nickname
+                    last_message = "[["+context["msg"].actual_user_nickname + "]]%%**" + context['msg'].content + "**%%" 
+                    logger.info([f"chat_channel]receive pending message {last_message} {group_name}"])
+                    # logger.info(f"to_user_id{context['msg'].to_user_id} from_user_id{context['msg'].from_user_id} other_user_id{context['msg'].from_user_id}")
+                    self.pending_message[group_name] = self.pending_message[group_name] + last_message  
                     return None
             else:  # 单聊
                 nick_name = context["msg"].from_user_nickname
@@ -160,6 +191,10 @@ class ChatChannel(Channel):
         elif context.type == ContextType.VOICE:
             if "desire_rtype" not in context and conf().get("voice_reply_voice") and ReplyType.VOICE not in self.NOT_SUPPORT_REPLYTYPE:
                 context["desire_rtype"] = ReplyType.VOICE
+        else:
+            logger.info(f"UnSupport context{context}")
+            if context['msg']:
+                logger.info(f"msg{context['msg']}")
         return context
 
     def _handle(self, context: Context):

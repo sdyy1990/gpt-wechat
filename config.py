@@ -179,6 +179,7 @@ available_setting = {
     "Minimax_api_key": "",
     "Minimax_group_id": "",
     "Minimax_base_url": "",
+    "chat_hint": {},
 }
 
 
