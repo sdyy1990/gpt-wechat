@@ -180,6 +180,8 @@ available_setting = {
     "Minimax_group_id": "",
     "Minimax_base_url": "",
     "chat_hint": {},
+    "bot_description": {
+    }
 }
 
 

@@ -49,7 +49,8 @@ class ClaudeAPIBot(Bot, OpenAIImage):
                     self.sessions.clear_all_session()
                     reply = Reply(ReplyType.INFO, "所有人记忆已清除")
                 else:
-                    session = self.sessions.session_query(query, session_id)
+                    logger.info(f"context:{context}")
+                    session = self.sessions.session_query(query, session_id, context['bot_description'])
                     result = self.reply_text(session)
                     logger.info(result)
                     total_tokens, completion_tokens, reply_content = (
@@ -82,7 +83,7 @@ class ClaudeAPIBot(Bot, OpenAIImage):
             response = self.claudeClient.messages.create(
                 model=actual_model,
                 max_tokens=1024,
-                # system=conf().get("system"),
+                system=session.system_prompt,
                 messages=GoogleGeminiBot.filter_messages(session.messages)
             )
             # response = openai.Completion.create(prompt=str(session), **self.args)

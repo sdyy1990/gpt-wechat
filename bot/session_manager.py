@@ -11,6 +11,7 @@ class Session(object):
             self.system_prompt = conf().get("character_desc", "")
         else:
             self.system_prompt = system_prompt
+        logger.info(f"Session {self.session_id} created with system_prompt: {self.system_prompt}")
 
     # 重置会话
     def reset(self):
@@ -46,23 +47,24 @@ class SessionManager(object):
         self.sessioncls = sessioncls
         self.session_args = session_args
 
-    def build_session(self, session_id, system_prompt=None):
+    def build_session(self, session_id, system_prompt=None, new_session_system_prompt=None):
         """
         如果session_id不在sessions中，创建一个新的session并添加到sessions中
         如果system_prompt不会空，会更新session的system_prompt并重置session
         """
         if session_id is None:
-            return self.sessioncls(session_id, system_prompt, **self.session_args)
+            return self.sessioncls(session_id, new_session_system_prompt, **self.session_args)
 
         if session_id not in self.sessions:
-            self.sessions[session_id] = self.sessioncls(session_id, system_prompt, **self.session_args)
+            self.sessions[session_id] = self.sessioncls(session_id, new_session_system_prompt, **self.session_args)
         elif system_prompt is not None:  # 如果有新的system_prompt，更新并重置session
             self.sessions[session_id].set_system_prompt(system_prompt)
         session = self.sessions[session_id]
         return session
 
-    def session_query(self, query, session_id):
-        session = self.build_session(session_id)
+    def session_query(self, query, session_id, character_desc=None):
+        session = self.build_session(session_id, None, character_desc) 
+        # 可能新建一个session， 这时候新建的session的system_prompt是character_desc
         session.add_query(query)
         try:
             max_tokens = conf().get("conversation_max_tokens", 1000)

@@ -135,8 +135,8 @@ class ClaudeAIBot(Bot, OpenAIImage):
             session_id = context["session_id"]
             if self.org_uuid is None:
                 return Reply(ReplyType.ERROR, self.error)
-
-            session = self.sessions.session_query(query, session_id)
+            logger.info(f"[CLAUDEAI] session_id={session_id}, context={context}")
+            session = self.sessions.session_query(query, session_id, context["bot_description"] )
             con_uuid = self.conversation_share_check(session_id)
 
             model = conf().get("model") or "gpt-3.5-turbo"
