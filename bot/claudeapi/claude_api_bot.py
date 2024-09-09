@@ -49,7 +49,6 @@ class ClaudeAPIBot(Bot, OpenAIImage):
                     self.sessions.clear_all_session()
                     reply = Reply(ReplyType.INFO, "所有人记忆已清除")
                 else:
-                    logger.info(f"context:{context}")
                     session = self.sessions.session_query(query, session_id, context.get('bot_description',None))
                     result = self.reply_text(session)
                     logger.info(result)

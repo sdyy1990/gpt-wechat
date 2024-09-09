@@ -84,9 +84,6 @@ class ChatChannel(Channel):
             else:
                 context["session_id"] = cmsg.other_user_id
                 context["receiver"] = cmsg.other_user_id
-            logger.info(f"context{context}")
-            if context['msg']:
-                logger.info(f"msg{context['msg']}")
 
             e_context = PluginManager().emit_event(EventContext(Event.ON_RECEIVE_MESSAGE, {"channel": self, "context": context}))
             context = e_context["context"]
@@ -98,19 +95,30 @@ class ChatChannel(Channel):
 
         # 消息内容匹配过程，并处理content
         if ctype == ContextType.TEXT:
+            
             if first_in and "」\n- - - - - - -" in content:  # 初次匹配 过滤引用消息
                 a, b = content.split('- - - - - - - - - - - - - - -')
                 content = f"{b} (引用了：{a[1:20]})"
                 context['msg'].content = content
-            logger.info(f"context{context}")
-            logger.info(f"msg: {context['msg']}")
             nick_name_black_list = conf().get("nick_name_black_list", [])
+            
+            if context["origin_ctype"] == ContextType.VOICE:
+                insert = "（语音消息）"
+            else :
+                insert = ""
+
             if context.get("isgroup", False):  # 群聊
                 # 校验关键字
                 match_prefix = check_prefix(content, conf().get("group_chat_prefix"))
                 match_contain = check_contain(content, conf().get("group_chat_keyword"))
                 flag = False
                 group_name = context['msg'].from_user_nickname
+                if group_name not in self.bot_description:
+                    self.bot_description[group_name] = conf().get("bot_description").get(group_name, ".")
+                    if isinstance(self.bot_description[group_name], list):
+                        self.bot_description[group_name] = ".".join(self.bot_description[group_name])
+                context["bot_description"] = self.bot_description[group_name]
+
                 if context["msg"].to_user_id != context["msg"].actual_user_id:
                     if match_prefix is not None or match_contain is not None:
                         flag = True
@@ -138,13 +146,9 @@ class ChatChannel(Channel):
                             pattern = f"@{re.escape(context['msg'].self_display_name)}(\u2005|\u0020)"
                             subtract_res = re.sub(pattern, r"", content)
                         content = subtract_res
-                        if group_name not in self.bot_description:
-                            self.bot_description[group_name] = conf().get("bot_description").get(group_name, ".")
-                            if isinstance(self.bot_description[group_name], list):
-                                self.bot_description[group_name] = ".".join(self.bot_description[group_name])
-                        context["bot_description"] = self.bot_description[group_name]
+                        last_message = "[["+context["msg"].actual_user_nickname + "]]%%**" + insert + context.get('content')+ "**%%"
+
                         # logger.info(f"to_user_id{context['msg'].to_user_id} from_user_id{context['msg'].from_user_id} other_user_id{context['msg'].from_user_id}")
-                        last_message = "[["+context["msg"].actual_user_nickname + "]]%%**" + context.get('content') + "**%%"
                         logger.info([f"chat_channel]receive at message {last_message} {group_name}"])
                         if "###回忆基础知识###" in last_message:
                             hint = conf().get("chat_hint").get(group_name, ".")
@@ -161,9 +165,7 @@ class ChatChannel(Channel):
                         content = f"{hint} {self.pending_message[group_name]} {last_message}"
                         self.pending_message[group_name] = "."
                 if not flag:
-                    if context["origin_ctype"] == ContextType.VOICE:
-                        logger.info("[chat_channel]receive group voice, but checkprefix didn't match")
-                    last_message = "[["+context["msg"].actual_user_nickname + "]]%%**" + context.get('content')+ "**%%"
+                    last_message = "[["+context["msg"].actual_user_nickname + "]]%%**" + insert + context.get('content')+ "**%%"
                     logger.info([f"chat_channel]receive pending message {last_message} {group_name}"])
                     # logger.info(f"to_user_id{context['msg'].to_user_id} from_user_id{context['msg'].from_user_id} other_user_id{context['msg'].from_user_id}")
                     self.pending_message[group_name] = self.pending_message[group_name] + last_message
@@ -250,7 +252,6 @@ class ChatChannel(Channel):
                 except Exception as e:
                     pass
                     # logger.warning("[chat_channel]delete temp file error: " + str(e))
-                logger.info(f"reply{reply}")
                 if reply.type == ReplyType.TEXT:
                     new_context = self._compose_context(ContextType.TEXT, reply.content, **context.kwargs)
                     if new_context:
